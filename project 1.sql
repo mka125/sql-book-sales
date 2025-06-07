@@ -45,3 +45,68 @@ SELECT branch_address, issue_count,
        DENSE_RANK() OVER (ORDER BY issue_count DESC) AS branch_rank
 FROM BranchIssues
 
+-- Identify Members with Overdue Books
+SELECT 
+    ist.issued_member_id,
+    m.member_name,
+    bk.book_title,
+    ist.issued_date,
+    DATEDIFF(DAY, ist.issued_date, GETDATE()) as over_dues_days
+FROM issued_status AS ist
+INNER JOIN members AS m ON m.member_id = ist.issued_member_id
+INNER JOIN books AS bk ON bk.isbn = ist.issued_book_isbn
+LEFT JOIN return_status AS rs ON rs.issued_id = ist.issued_id
+WHERE rs.return_date IS NULL
+    AND DATEDIFF(DAY, ist.issued_date, GETDATE()) > 30
+ORDER BY ist.issued_member_id;
+
+-- Update Book Status on Return
+-- Insert into return_status
+INSERT INTO return_status (return_id, issued_id, return_date, book_quality)
+VALUES ('RS125', 'IS130', GETDATE(), 'Good');
+
+-- Update books
+UPDATE books
+SET status = 'no'
+WHERE isbn = '978-0-451-52994-2';
+
+-- Branch Performance Report
+SELECT 
+    b.branch_id,
+    b.manager_id,
+    COUNT(ist.issued_id) AS number_book_issued,
+    COUNT(rs.return_id) AS number_of_book_return,
+    SUM(bk.rental_price) AS total_revenue
+INTO branch_reports
+FROM issued_status AS ist
+INNER JOIN employees AS e ON e.emp_id = ist.issued_emp_id
+INNER JOIN branch AS b ON e.branch_id = b.branch_id
+LEFT JOIN return_status AS rs ON rs.issued_id = ist.issued_id
+INNER JOIN books AS bk ON ist.issued_book_isbn = bk.isbn
+GROUP BY b.branch_id, b.manager_id;
+
+-- Create a Table of Active Members
+SELECT * 
+INTO active_members
+FROM members
+WHERE member_id IN (
+    SELECT DISTINCT issued_member_id   
+    FROM issued_status
+    WHERE issued_date >= DATEADD(MONTH, -2, GETDATE())
+);
+
+-- Find Employees with the Most Book Issues Processed
+SELECT TOP 3
+    e.emp_name,
+    b.branch_id,
+    b.manager_id,
+    COUNT(ist.issued_id) AS no_book_issued
+FROM issued_status AS ist
+INNER JOIN employees AS e ON e.emp_id = ist.issued_emp_id
+INNER JOIN branch AS b ON e.branch_id = b.branch_id
+GROUP BY e.emp_name, b.branch_id, b.manager_id
+ORDER BY no_book_issued DESC;
+
+
+
+
